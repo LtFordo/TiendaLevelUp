@@ -1,17 +1,20 @@
-/* app.js
-   Unificador de "añadir al carrito" sin tocar carrito.js.
-   - Prioridad: usar carrito.js si expone window.productos + window.agregarAlCarrito.
-   - Si no, persistir en localStorage 'carrito' (forma: [{codigo,nombre,precio,descripcion,img,cantidad},...]).
-   - Mantiene compatibilidad con 'catalog_cart' como fallback secundario.
-   - Sin alertas.
+/* /app.js
+   ÚNICAMENTE: mantener persistencia products_table/productSpecs_table y exponer API.
+   Restauración estricta de la estructura HTML de cada tarjeta para respetar CSS.
+   No modifico HTML/CSS del proyecto.
 */
 
-const CatalogApp = (() => {
-  const CART_KEY = 'catalog_cart'; // compatibilidad histórica
-  const CART_KEY_PRIMARY = 'carrito'; // clave preferida para que carro.html la lea
+/* global window, document, localStorage, console */
+(function () {
+  'use strict';
 
-  // Productos "maestro" usados por la UI (no tocar desde aquí)
-  const products = [
+  // KEYS
+  var PRODUCTS_KEY = 'products_table';
+  var PRODUCT_SPECS_KEY = 'productSpecs_table';
+  var CART_KEY = 'carrito';
+
+  // SEED (no tocar)
+  var productsSeed = [
     { code: 'JM001', category: 'Juegos de Mesa', name: 'Catan', price: 29990, img: 'img/Sebas/JM001.jpg', stock: 20 },
     { code: 'JM002', category: 'Juegos de Mesa', name: 'Carcassonne', price: 24990, img: 'img/Sebas/JM002.jpg', stock: 15 },
     { code: 'AC001', category: 'Accesorios', name: 'Joystick Xbox Series X', price: 59990, img: 'img/Sebas/AC001.jpg', stock: 22 },
@@ -24,329 +27,295 @@ const CatalogApp = (() => {
     { code: 'PP001', category: 'Poleras Personalizadas', name: "Polera Gamer Personalizada 'Level-Up'", price: 14990, img: 'img/Sebas/PP001.jpg', stock: 50 }
   ];
 
-  // Formato CLP
-  function formatCLP(n){ try { return Number(n).toLocaleString('es-CL'); } catch(e){ return String(n); } }
+  var productSpecsSeed = {
+    'JM001': { short: 'Catan — juego de estrategia de colocación y comercio.', details: ['Jugadores: 3–4', 'Tiempo de juego: 60–120 min'] },
+    'JM002': { short: 'Carcassonne — colocación de losetas.', details: ['Jugadores: 2–5', 'Tiempo de juego: 30–45 min'] },
+    'AC001': { short: 'Control inalámbrico Xbox/PC.', details: ['Conectividad: Bluetooth/USB-C'] },
+    'AC002': { short: 'Auriculares HyperX Cloud II.', details: ['Micrófono desmontable'] },
+    'CO001': { short: 'PS5 — consola Sony.', details: ['CPU: AMD Zen2', 'GPU: RDNA2'] },
+    'CG001': { short: 'PC Gamer ASUS ROG Strix.', details: ['Varía por modelo'] },
+    'SG001': { short: 'Secretlab Titan — silla.', details: ['Soporte lumbar'] },
+    'MS001': { short: 'Logitech G502 HERO — mouse.', details: ['Sensor HERO'] },
+    'MP001': { short: 'Razer Goliathus — mousepad.', details: ['Base antideslizante'] },
+    'PP001': { short: 'Polera personalizada.', details: ['Material: algodón/mezcla'] }
+  };
 
-  // Escapes
-  function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
-  function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
-
-  // ---- Helpers para localStorage 'carrito' (clave primaria) ----
-  function readPrimaryCart(){
+  // UTIL
+  function safeGetJSON(key, fallback) {
     try {
-      const raw = localStorage.getItem(CART_KEY_PRIMARY);
-      return raw ? JSON.parse(raw) : [];
-    } catch(e){ return []; }
-  }
-  function savePrimaryCart(arr){
-    try { localStorage.setItem(CART_KEY_PRIMARY, JSON.stringify(arr)); } catch(e){}
-    // mantener compatibilidad con 'catalog_cart' si quieres (no obligatorio)
-  }
-
-  // fallback compatibilidad antigua (catalog_cart)
-  function readLegacyCatalogCart(){
-    try {
-      const raw = localStorage.getItem(CART_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch(e){ return []; }
-  }
-  function saveLegacyCatalogCart(arr){
-    try { localStorage.setItem(CART_KEY, JSON.stringify(arr)); } catch(e){}
-  }
-
-  // Actualiza contador en nav (prefiere función expuesta por carrito.js si existe)
-  function updateCartCount(){
-    try {
-      if (typeof window !== 'undefined' && typeof window.actualizarContadorCarrito === 'function') {
-        window.actualizarContadorCarrito();
-        return;
-      }
-    } catch(e){}
-    // fallback: contemos en primary carrito
-    try {
-      const cart = readPrimaryCart();
-      const total = cart.reduce((s,i) => s + (i.cantidad || 0), 0);
-      const span = document.getElementById('cart-count');
-      if (span) span.textContent = total;
-    } catch(e){}
-  }
-
-  // Añadir al carrito usando carrito.js si es posible (espera indice en window.productos y función agregarAlCarrito)
-  function tryAddUsingCarritoJsByIndex(code, qty = 1){
-    try {
-      if (typeof window !== 'undefined' && typeof window.agregarAlCarrito === 'function' && Array.isArray(window.productos)) {
-        const idx = window.productos.findIndex(p => (p.codigo || p.code || '') === String(code));
-        if (idx !== -1) {
-          for (let i=0;i<qty;i++) window.agregarAlCarrito(idx);
-          // carrito.js se encarga de persistir y actualizar contador si tiene esa lógica
-          updateCartCount();
-          return true;
-        }
-      }
-    } catch(e){}
-    return false;
-  }
-
-  // Si carrito.js NO está disponible o no expone window.productos, guardar en localStorage 'carrito' (clave primaria)
-  function addToPrimaryCartFallback(mappedObj, qty = 1){
-    if (!mappedObj || !mappedObj.codigo) return false;
-    const code = String(mappedObj.codigo);
-    const cart = readPrimaryCart();
-    const existing = cart.find(i => String(i.codigo) === code);
-    if (existing) {
-      existing.cantidad = (existing.cantidad || 0) + qty;
-    } else {
-      const item = {
-        codigo: code,
-        nombre: mappedObj.nombre || mappedObj.name || code,
-        precio: Number(mappedObj.precio || mappedObj.price || 0),
-        descripcion: mappedObj.descripcion || mappedObj.category || '',
-        img: mappedObj.img || '',
-        cantidad: qty
-      };
-      cart.push(item);
+      var raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (e) {
+      console.error('safeGetJSON', key, e);
+      return fallback;
     }
-    savePrimaryCart(cart);
-    // also update legacy catalog_cart if desired (keep compatibility)
-    try {
-      const legacy = readLegacyCatalogCart();
-      // keep legacy as [{code, qty}, ...]
-      const h = legacy.find(x => x.code === code);
-      if (h) h.qty = (h.qty || 0) + qty;
-      else legacy.push({ code: code, qty: qty });
-      saveLegacyCatalogCart(legacy);
-    } catch(e){}
-    updateCartCount();
-    return true;
   }
-
-  // API pública para añadir producto (intenta carrito.js, si no guarda en localStorage)
-  function addToCartUnified(code, qty = 1, productObjForMapping = null){
-    // 1) si carrito.js expone window.productos y window.agregarAlCarrito -> usarlo
-    const usedCarritoJs = tryAddUsingCarritoJsByIndex(code, qty);
-    if (usedCarritoJs) return true;
-
-    // 2) si no, intentar mapear el producto y guardarlo en primary cart (localStorage 'carrito')
-    let mapped = productObjForMapping;
-    if (!mapped) {
-      mapped = products.find(p => p.code === code) || null;
-      if (mapped) {
-        mapped = {
-          codigo: mapped.code,
-          nombre: mapped.name,
-          precio: mapped.price,
-          descripcion: mapped.category,
-          img: mapped.img
-        };
-      }
-    } else {
-      // asegurar propiedades clave
-      mapped = {
-        codigo: mapped.codigo || mapped.code,
-        nombre: mapped.nombre || mapped.name,
-        precio: mapped.precio || mapped.price,
-        descripcion: mapped.descripcion || mapped.category || '',
-        img: mapped.img || ''
-      };
-    }
-
-    if (mapped) {
-      addToPrimaryCartFallback(mapped, qty);
+  function safeSetJSON(key, obj) {
+    try {
+      localStorage.setItem(key, JSON.stringify(obj));
       return true;
-    }
-
-    // 3) si no se encontró mapping, guardamos en legacy catalog_cart (por lo menos)
-    try {
-      const legacy = readLegacyCatalogCart();
-      const existing = legacy.find(x => x.code === code);
-      if (existing) existing.qty = (existing.qty || 0) + qty;
-      else legacy.push({ code: code, qty: qty });
-      saveLegacyCatalogCart(legacy);
-      updateCartCount();
-      return true;
-    } catch(e){
+    } catch (e) {
+      console.error('safeSetJSON', key, e);
       return false;
     }
   }
-
-  // ---- Renderizado de tarjetas ----
-  function productCardHtml(p){
-    return `
-      <article class="product-card" data-code="${escapeAttr(p.code)}" role="article" aria-label="${escapeAttr(p.name)}">
-        <img class="product-image" src="${escapeAttr(p.img)}" alt="${escapeAttr(p.name)}" />
-        <div class="product-body">
-          <div>
-            <div class="product-title">${escapeHtml(p.name)}</div>
-            <div class="product-meta">${escapeHtml(p.category)}</div>
-          </div>
-          <div class="product-footer">
-            <div class="price">$${formatCLP(p.price)} CLP</div>
-            <button class="add-btn" data-add="${escapeAttr(p.code)}" aria-label="Agregar ${escapeAttr(p.name)}">Agregar</button>
-          </div>
-        </div>
-      </article>
-    `;
+  function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, function (c) { return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]; });
+  }
+  function formatCLP(n) {
+    try { return Number(n).toLocaleString('es-CL'); } catch (e) { return String(n); }
   }
 
-  function renderProducts(filterCategory = 'all'){
-    const container = document.getElementById('products-grid');
-    if(!container) return;
-    const list = (!filterCategory || filterCategory === 'all') ? products : products.filter(p => (p.category || '').toLowerCase() === (filterCategory || '').toLowerCase());
+  // STORAGE: init/read/save (essentials only)
+  function initStorageIfEmpty() {
+    if (!localStorage.getItem(PRODUCTS_KEY)) {
+      safeSetJSON(PRODUCTS_KEY, productsSeed.slice());
+      console.info('[CatalogApp] seed products written');
+    }
+    if (!localStorage.getItem(PRODUCT_SPECS_KEY)) {
+      safeSetJSON(PRODUCT_SPECS_KEY, Object.assign({}, productSpecsSeed));
+      console.info('[CatalogApp] seed specs written');
+    }
+  }
+  function readProducts() { return safeGetJSON(PRODUCTS_KEY, productsSeed.slice()); }
+  function saveProducts(arr) { return safeSetJSON(PRODUCTS_KEY, arr); }
+  function readSpecs() { return safeGetJSON(PRODUCT_SPECS_KEY, Object.assign({}, productSpecsSeed)); }
+  function saveSpecs(obj) { return safeSetJSON(PRODUCT_SPECS_KEY, obj); }
 
-    if(filterCategory && filterCategory !== 'all'){
-      const exact = new Set(products.map(p => (p.category || '').toLowerCase()));
-      if(!exact.has(filterCategory.toLowerCase())){
-        const partial = products.filter(p => (p.category || '').toLowerCase().includes(filterCategory.toLowerCase()));
-        if(partial.length) { container.innerHTML = partial.map(p => productCardHtml(p)).join(''); attachCardEvents(); return; }
+  // ADMIN minimal (compatible)
+  function adminList() { initStorageIfEmpty(); return readProducts(); }
+  function adminGet(code) { if (!code) return null; var a = readProducts(); for (var i=0;i<a.length;i++) if (String(a[i].code) === String(code)) return a[i]; return null; }
+  function adminAdd(obj) {
+    if (!obj || !obj.code) return { ok:false, msg:'code required' };
+    var arr = readProducts();
+    for (var i=0;i<arr.length;i++) if (String(arr[i].code) === String(obj.code)) return { ok:false, msg:'exists' };
+    arr.push({ code:String(obj.code), category: obj.category||'', name: obj.name||'', price: Number(obj.price||0), img: obj.img||'', stock: Number(obj.stock||0) });
+    var ok = saveProducts(arr);
+    var specs = readSpecs(); specs[obj.code] = { short: obj.short||'', details: Array.isArray(obj.details) ? obj.details.slice() : (obj.details ? [obj.details] : []) }; saveSpecs(specs);
+    return { ok: ok };
+  }
+  function adminUpdate(code, up) {
+    if (!code) return { ok:false, msg:'code required' };
+    var arr = readProducts(); var idx=-1;
+    for (var i=0;i<arr.length;i++) if (String(arr[i].code) === String(code)) { idx=i; break; }
+    if (idx === -1) return { ok:false, msg:'not found' };
+    arr[idx] = {
+      code: code,
+      category: (typeof up.category !== 'undefined') ? up.category : arr[idx].category,
+      name: (typeof up.name !== 'undefined') ? up.name : arr[idx].name,
+      price: Number(typeof up.price !== 'undefined' ? up.price : arr[idx].price),
+      img: (typeof up.img !== 'undefined') ? up.img : arr[idx].img,
+      stock: Number(typeof up.stock !== 'undefined' ? up.stock : arr[idx].stock || 0)
+    };
+    var okP = saveProducts(arr);
+    var specs = readSpecs();
+    specs[code] = { short: (up && up.short) ? up.short : (specs[code] && specs[code].short) || '', details: Array.isArray(up && up.details) ? up.details.slice() : (up && up.details ? [up.details] : (specs[code] && specs[code].details) || []) };
+    saveSpecs(specs);
+    return { ok: okP };
+  }
+  function adminDelete(code) {
+    if (!code) return { ok:false, msg:'code required' };
+    var arr = readProducts(); var idx=-1;
+    for (var i=0;i<arr.length;i++) if (String(arr[i].code) === String(code)) { idx=i; break; }
+    if (idx === -1) return { ok:false, msg:'not found' };
+    arr.splice(idx,1);
+    var okP = saveProducts(arr);
+    var specs = readSpecs(); if (specs && typeof specs[code] !== 'undefined') delete specs[code]; saveSpecs(specs);
+    return { ok: okP };
+  }
+  var adminAPI = { initStorage: initStorageIfEmpty, list: adminList, get: adminGet, add: adminAdd, update: adminUpdate, del: adminDelete, readSpecs: readSpecs, saveSpecs: saveSpecs, PRODUCTS_KEY: PRODUCTS_KEY, PRODUCT_SPECS_KEY: PRODUCT_SPECS_KEY };
+
+  // CART minimal
+  function readCart() { return safeGetJSON(CART_KEY, []); }
+  function saveCart(arr) { return safeSetJSON(CART_KEY, arr); }
+  function addToCartUnified(code, qty, mapping) {
+    if (!code) return false;
+    if (!qty) qty = 1;
+    try {
+      var mapped = mapping || null;
+      if (!mapped) {
+        var arr = readProducts();
+        for (var i=0;i<arr.length;i++) if (String(arr[i].code) === String(code)) { mapped = { codigo: arr[i].code, nombre: arr[i].name, precio: arr[i].price, img: arr[i].img }; break; }
       }
-    }
-
-    container.innerHTML = list.map(p => productCardHtml(p)).join('');
-    attachCardEvents();
+      if (!mapped) return false;
+      var cart = readCart();
+      var f = null;
+      for (var j=0;j<cart.length;j++) if (String(cart[j].codigo) === String(mapped.codigo)) { f = cart[j]; break; }
+      if (f) f.cantidad = (f.cantidad || 0) + qty;
+      else cart.push({ codigo: String(mapped.codigo), nombre: mapped.nombre, precio: Number(mapped.precio || mapped.price || 0), cantidad: qty, img: mapped.img || '' });
+      saveCart(cart);
+      updateCartCount();
+      return true;
+    } catch (e) { console.error('addToCartUnified', e); return false; }
+  }
+  function updateCartCount() {
+    try {
+      var cart = readCart();
+      var total = 0;
+      for (var i=0;i<cart.length;i++) total += Number(cart[i].cantidad || 0);
+      var el = document.getElementById('cart-count') || document.getElementById('nav-cart-count') || document.querySelector('.cart-link span');
+      if (el) el.textContent = total;
+    } catch (e) { /* ignore */ }
   }
 
-  // attach events for add buttons and navigation
-  function attachCardEvents(){
-    const container = document.getElementById('products-grid');
-    if(!container) return;
+  // ---------- RENDER: respetando estructura exacta
+  // Esta función construye la tarjeta **con la estructura original** que tu CSS espera.
+  function productCardHtml(p) {
+    var img = p.img || 'img/default.png';
+    // Estructura respetada: article.product-card > img.product-image + div.product-body { div (title/meta) , div.product-footer (price + button) }
+    // Añadimos link en imagen y en título **sin cambiar color**: anchor tiene inline style color:inherit; text-decoration:none;
+    var codeEnc = encodeURIComponent(p.code);
+    var out = '';
+    out += '<article class="product-card" data-code="' + esc(p.code) + '">';
+    out +=   '<a href="product.html?code=' + codeEnc + '" style="color:inherit;text-decoration:none;">';
+    out +=     '<img class="product-image" src="' + esc(img) + '" alt="' + esc(p.name) + '" onerror="this.onerror=null;this.src=\'img/default.png\'" />';
+    out +=   '</a>';
+    out +=   '<div class="product-body">';
+    out +=     '<div>';
+    out +=       '<div class="product-title"><a href="product.html?code=' + codeEnc + '" style="color:inherit;text-decoration:none;">' + esc(p.name) + '</a></div>';
+    out +=       '<div class="product-meta">' + esc(p.category) + '</div>';
+    out +=     '</div>';
+    out +=     '<div class="product-footer">';
+    out +=       '<div class="price">$' + formatCLP(p.price) + '</div>';
+    out +=       '<div style="display:flex;gap:8px;"><button class="btn btn-cerulean add-to-cart" data-code="' + esc(p.code) + '">Añadir</button></div>';
+    out +=     '</div>';
+    out +=   '</div>';
+    out += '</article>';
+    return out;
+  }
 
-    // add button events
-    container.querySelectorAll('[data-add]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation(); // no navegar al detalle
-        const code = e.currentTarget.dataset.add;
-        const product = products.find(x => x.code === code) || null;
-        const mapped = product ? {
-          codigo: product.code,
-          nombre: product.name,
-          precio: product.price,
-          descripcion: product.category,
-          img: product.img
-        } : null;
+  function renderProducts(filterCategory) {
+    try {
+      var container = document.getElementById('products-grid');
+      if (!container) return;
+      var list = readProducts();
+      if (filterCategory && filterCategory !== 'all') {
+        var fc = String(filterCategory).toLowerCase();
+        var filtered = [];
+        for (var i=0;i<list.length;i++){
+          var p = list[i];
+          if ((p.category || '').toLowerCase() === fc || (p.name || '').toLowerCase().indexOf(fc) !== -1) filtered.push(p);
+        }
+        list = filtered;
+      }
+      var html = [];
+      for (var j=0;j<list.length;j++) html.push(productCardHtml(list[j]));
+      container.innerHTML = html.join('');
+      // attach events: add-to-cart buttons
+      var adds = container.querySelectorAll('.add-to-cart');
+      for (var k=0;k<adds.length;k++){
+        (function(btn){
+          btn.removeEventListener('click', onGridAddClick);
+          btn.addEventListener('click', onGridAddClick);
+        }(adds[k]));
+      }
+      // attach click on whole article -> go to detail when clicking outside buttons/links
+      var articles = container.querySelectorAll('article.product-card');
+      for (var a=0;a<articles.length;a++){
+        (function(article){
+          article.removeEventListener('click', onArticleClick);
+          article.addEventListener('click', onArticleClick);
+        }(articles[a]));
+      }
+      updateCartCount();
+    } catch (e) { console.error('renderProducts', e); }
+  }
 
-        // Llamada silenciosa
-        addToCartUnified(code, 1, mapped);
-        // actualizar contador visual (si carrito.js no lo hizo)
-        try {
-          if (typeof window.actualizarContadorCarrito === 'function') window.actualizarContadorCarrito();
-          else updateCartCount();
-        } catch(e){ updateCartCount(); }
-      });
+  function onGridAddClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var code = e.currentTarget.getAttribute('data-code');
+    if (!code) return;
+    addToCartUnified(code, 1, null);
+  }
+
+  // clicking on article (but ignore clicks on anchors or buttons)
+  function onArticleClick(e) {
+    var target = e.target || e.srcElement;
+    // if clicked an <a> or a button, do nothing (the <a> will navigate)
+    var node = target;
+    while (node && node !== this) {
+      if (node.tagName && node.tagName.toLowerCase() === 'a') return;
+      if (node.classList && (node.classList.contains('add-to-cart') || node.tagName.toLowerCase() === 'button')) return;
+      node = node.parentNode;
+    }
+    var code = this.getAttribute('data-code');
+    if (code) {
+      // navigate to product detail
+      try { location.href = 'product.html?code=' + encodeURIComponent(code); } catch (err) {}
+    }
+  }
+
+  function populateCategoriesDatalist(selector) {
+    try {
+      var datalist = document.querySelector(selector);
+      if (!datalist) return;
+      var arr = readProducts();
+      var set = {};
+      for (var i=0;i<arr.length;i++) set[arr[i].category || 'Sin categoría'] = true;
+      var opts = [];
+      for (var k in set) if (set.hasOwnProperty(k)) opts.push('<option value="' + esc(k) + '"></option>');
+      datalist.innerHTML = opts.sort().join('');
+    } catch (e) { console.error('populateCategoriesDatalist', e); }
+  }
+
+  function renderProductPage(code) {
+    try {
+      var root = document.getElementById('product-detail');
+      if (!root) return;
+      if (!code) { root.innerHTML = '<p>Producto no especificado.</p>'; return; }
+      var arr = readProducts();
+      var prod = null;
+      for (var i=0;i<arr.length;i++) if (String(arr[i].code) === String(code)) { prod = arr[i]; break; }
+      if (!prod) { root.innerHTML = '<p>Producto no encontrado.</p>'; return; }
+      var specs = readSpecs(); var sp = specs && specs[code] ? specs[code] : { short:'', details:[] };
+
+      var html = '';
+      html += '<article class="card product-detail-card"><div class="grid">';
+      html += '<div class="detail-image"><img src="' + esc(prod.img || 'img/default.png') + '" alt="' + esc(prod.name) + '" onerror="this.onerror=null;this.src=\'img/default.png\'" /></div>';
+      html += '<div class="detail-body">';
+      html += '<h1>' + esc(prod.name) + '</h1>';
+      html += '<div class="meta">' + esc(prod.category) + ' — Código: ' + esc(prod.code) + '</div>';
+      html += '<p class="price">$' + formatCLP(prod.price) + ' CLP</p>';
+      if (sp && sp.short) html += '<p>' + esc(sp.short) + '</p>';
+      if (sp && sp.details && sp.details.length) { html += '<h4>Detalles</h4><ul>'; for (var d=0; d<sp.details.length; d++) html += '<li>' + esc(sp.details[d]) + '</li>'; html += '</ul>'; }
+      html += '<div class="detail-actions"><button id="btn-add-detail" class="btn">Añadir al carrito</button></div>';
+      html += '</div></div></article>';
+
+      root.innerHTML = html;
+
+      var btn = document.getElementById('btn-add-detail');
+      if (btn) btn.addEventListener('click', function () { addToCartUnified(prod.code, 1, { codigo: prod.code, nombre: prod.name, precio: prod.price, img: prod.img }); });
+
+    } catch (e) { console.error('renderProductPage', e); }
+  }
+
+  // INIT
+  function init() {
+    try { initStorageIfEmpty(); } catch (e) { /* ignore */ }
+    try { updateCartCount(); } catch (e) { /* ignore */ }
+    // pages call renderProducts / renderProductPage explicitly
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', function () {
+      try { init(); } catch (e) { console.error('CatalogApp init failed', e); }
     });
-
-    // image fallback
-    container.querySelectorAll('img.product-image').forEach(img => {
-      img.onerror = () => { img.onerror = null; img.src = 'img/placeholder.png'; };
-    });
-
-    // click on card navigates to product.html
-    container.querySelectorAll('.product-card').forEach(card => {
-      card.addEventListener('click', (e) => {
-        // si clic en botón agregar se paró la propagación, aquí será otro clic => navegar
-        const code = card.dataset.code;
-        location.href = 'product.html?code=' + encodeURIComponent(code);
-      });
-    });
   }
 
-  // datalist categorías
-  function getCategories(){
-    const set = new Set(products.map(p => p.category || 'Sin categoría'));
-    return Array.from(set).sort();
-  }
-  function populateCategoriesDatalist(selector){
-    const datalist = document.querySelector(selector);
-    if(!datalist) return;
-    const cats = getCategories();
-    datalist.innerHTML = cats.map(c => `<option value="${escapeAttr(c)}"></option>`).join('');
-  }
-
-  // render página de detalle
-  function renderProductPage(code){
-    const root = document.getElementById('product-detail');
-    if(!root) return;
-    if(!code){
-      root.innerHTML = `<div class="product-detail"><p>Producto no especificado.</p></div>`;
-      return;
-    }
-    const product = products.find(p => p.code === code);
-    if(!product){
-      root.innerHTML = `<div class="product-detail"><p>Producto con código ${escapeHtml(code)} no encontrado.</p></div>`;
-      return;
-    }
-
-    const specs = (typeof window !== 'undefined' && window.productSpecs) ? window.productSpecs[code] : null;
-    // we have local productSpecs defined in earlier versions; if not present just show basic
-    let detailsHtml = '';
-    if (!specs && product) {
-      // we can show short placeholders or omit
-      detailsHtml = '';
-    } else if (specs && specs.details) {
-      detailsHtml = `<ul>${specs.details.map(d => `<li>${escapeHtml(d)}</li>`).join('')}</ul>`;
-    }
-
-    root.innerHTML = `
-      <div class="product-detail">
-        <div class="grid">
-          <div>
-            <img src="${escapeAttr(product.img)}" alt="${escapeAttr(product.name)}" onerror="this.onerror=null;this.src='img/placeholder.png'"/>
-            <div style="margin-top:8px;display:flex;gap:8px;">
-              <button id="btn-add-detail" class="add-btn">Agregar al carrito</button>
-            </div>
-          </div>
-          <div>
-            <h2>${escapeHtml(product.name)}</h2>
-            <div class="product-meta">${escapeHtml(product.category)} • Código: ${escapeHtml(product.code)}</div>
-            <p style="margin-top:12px;font-weight:700;font-size:1.1rem">$${formatCLP(product.price)} CLP</p>
-            <p style="margin-top:10px">${escapeHtml((specs && specs.short) || '')}</p>
-            <section class="specs">
-              <h4>Especificaciones / Detalles</h4>
-              ${detailsHtml}
-            </section>
-          </div>
-        </div>
-      </div>
-    `;
-
-    const addBtn = document.getElementById('btn-add-detail');
-    if (addBtn) {
-      addBtn.addEventListener('click', () => {
-        const mapped = {
-          codigo: product.code,
-          nombre: product.name,
-          precio: product.price,
-          descripcion: product.category,
-          img: product.img
-        };
-        addToCartUnified(product.code, 1, mapped);
-        try {
-          if (typeof window.actualizarContadorCarrito === 'function') window.actualizarContadorCarrito();
-          else updateCartCount();
-        } catch(e){ updateCartCount(); }
-      });
-    }
-  }
-
-  function getProductByCode(code){
-    return products.find(p => p.code === code) || null;
-  }
-
-  // init y exposición pública
-  function init(){
-    updateCartCount();
-    const datalist = document.querySelector('#category-list');
-    if (datalist) populateCategoriesDatalist('#category-list');
-  }
-
-  return {
-    init,
-    renderProducts,
-    populateCategoriesDatalist,
-    renderProductPage,
-    getProductByCode,
-    updateCartCount,
-    addToCart: addToCartUnified
+  // EXPORT
+  var API = {
+    init: init,
+    renderProducts: renderProducts,
+    populateCategoriesDatalist: populateCategoriesDatalist,
+    renderProductPage: renderProductPage,
+    addToCart: addToCartUnified,
+    updateCartCount: updateCartCount,
+    admin: adminAPI,
+    _internal: { readProducts: readProducts, readSpecs: readSpecs }
   };
-})();
 
-// Fin de app.js
+  try { window.CatalogApp = API; } catch (e) { /* ignore */ }
+
+}());
