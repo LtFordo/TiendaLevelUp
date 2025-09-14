@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Catálogo — Tienda Level Up</title>
+  <link rel="stylesheet" href="Css/styles2.css">
+</head>
+<body>
+  <!-- NAV (repetible en cada página cliente) -->
+  <nav class="navbar">
+    <div class="nav-brand" id="brand-link">Level Up</div>
+    <div class="nav-menu">
+      <a href="index.html">Inicio</a>
+      <a href="catalogo.html" class="active">Catálogo</a>
+      <a href="blog.html">Blog</a>
+      <a href="contacto.html">Contacto</a>
+      <a href="carrito.html" class="cart-link">Carrito (<span id="cart-count" aria-live="polite">0</span>)</a>
+      <a href="login.html">Ingresar</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <header class="page-header">
+      <h1>Catálogo de productos</h1>
+
+      <div class="controls">
+        <!-- Input con datalist: el usuario escribe y ve las coincidencias -->
+        <label class="filter-label">
+          Categoría:
+          <input id="filter-input" list="category-list" placeholder="Escribe para filtrar (ej. Accesorios)" autocomplete="off" />
+          <datalist id="category-list"></datalist>
+        </label>
+
+        <button id="filter-clear" class="btn small">Limpiar</button>
+      </div>
+    </header>
+
+    <section id="products-grid" class="products-grid" aria-live="polite"></section>
+  </main>
+
+  <footer class="page-footer">
+    <div id="footer-text"></div>
+  </footer>
+
+  <script src="carrito.js" defer></script>
+  <script src="app.js" defer></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Behavior nav brand
+      document.getElementById('brand-link').addEventListener('click', () => location.href = 'index.html');
+
+      CatalogApp.init();
+      CatalogApp.populateCategoriesDatalist('#category-list');
+      CatalogApp.renderProducts('all');
+
+      // Filter input behavior
+      const input = document.getElementById('filter-input');
+      input.addEventListener('input', (e) => {
+        // show suggestions via datalist (populated), but also filter live: apply when exact match or when user presses Enter
+        const val = e.target.value.trim();
+        if (!val) CatalogApp.renderProducts('all');
+      });
+      input.addEventListener('change', (e) => {
+        const v = e.target.value.trim();
+        CatalogApp.renderProducts(v || 'all');
+      });
+      input.addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') {
+          const v = e.target.value.trim();
+          CatalogApp.renderProducts(v || 'all');
+        }
+      });
+
+      document.getElementById('filter-clear').addEventListener('click', () => {
+        input.value = '';
+        CatalogApp.renderProducts('all');
+      });
+
+      // footer year
+      document.getElementById('footer-text').textContent = `© ${new Date().getFullYear()} Tienda Level Up`;
+    });
+  </script>
+</body>
+</html>
+

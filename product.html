@@ -1,0 +1,49 @@
+<!--product.html-->
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Producto — Tienda Level Up</title>
+    <link rel="stylesheet" href="Css/styles2.css">
+  </head>
+  <body>
+    <!-- NAV -->
+    <nav class="navbar">
+      <div class="nav-brand" id="brand-link">Level Up</div>
+      <div class="nav-menu">
+        <a href="index.html">Inicio</a>
+        <a href="catalogo.html">Catálogo</a>
+        <a href="blog.html">Blog</a>
+        <a href="contacto.html">Contacto</a>
+        <a href="carrito.html" class="cart-link">Carrito (<span id="cart-count" aria-live="polite">0</span>)</a>
+        <a href="login.html">Ingresar</a>
+      </div>
+    </nav>
+
+    <main class="container">
+      <div id="product-detail" class="product-detail"></div>
+    </main>
+
+    <footer class="page-footer">
+      <div id="footer-text"></div>
+    </footer>
+
+  <script src="carrito.js" defer></script>
+  <script src="app.js" defer></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('brand-link').addEventListener('click', () => location.href = 'index.html');
+        CatalogApp.init();
+
+        // get code from query param
+        const params = new URLSearchParams(location.search);
+        const code = params.get('code');
+        CatalogApp.renderProductPage(code || null);
+
+        // footer year
+        document.getElementById('footer-text').textContent = `© ${new Date().getFullYear()} Tienda Level Up`;
+      });
+    </script>
+  </body>
+</html>

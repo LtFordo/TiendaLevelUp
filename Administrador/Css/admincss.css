@@ -1,0 +1,119 @@
+ body {
+      display: flex;
+      min-height: 100vh;
+      background-color: #f8f9fa;
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .sidebar {
+      width: 220px;
+      background-color: #f1f1f1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 1rem 0;
+      border-right: 1px solid #ddd;
+      position: fixed;
+      height: 100vh;
+    }
+    .sidebar .top-section {
+      padding-left: 1rem;
+      font-weight: bold;
+      font-size: 1.2rem;
+      margin-bottom: 1rem;
+    }
+    .sidebar nav {
+      flex-grow: 1;
+    }
+    .sidebar nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .sidebar nav ul li {
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.95rem;
+      color: #333;
+      transition: background-color 0.2s ease;
+    }
+    .sidebar nav ul li:hover,
+    .sidebar nav ul li.active {
+      background-color: #0d6efd;
+      color: white;
+      border-radius: 0 20px 20px 0;
+    }
+    .sidebar nav ul li svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+    .sidebar .bottom-section {
+      padding-left: 1rem;
+      border-top: 1px solid #ddd;
+    }
+    .sidebar .bottom-section ul li {
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.95rem;
+      color: #333;
+      transition: background-color 0.2s ease;
+    }
+    .sidebar .bottom-section ul li:hover {
+      background-color: #0d6efd;
+      color: white;
+      border-radius: 0 20px 20px 0;
+    }
+
+    /* Main content styles */
+    .main-content {
+      margin-left: 220px;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    header {
+      background-color: #fff;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #333;
+    }
+    header .notification {
+      cursor: pointer;
+      width: 24px;
+      height: 24px;
+      fill: #333;
+      transition: fill 0.2s ease;
+    }
+    header .notification:hover {
+      fill: #0d6efd;
+    }
+
+    main {
+      flex-grow: 1;
+      padding: 1rem 2rem;
+      background-color: #fafafa;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .content-top,
+    .content-bottom {
+      background-color: white;
+      border-radius: 6px;
+      box-shadow: 0 0 8px rgb(0 0 0 / 0.1);
+      flex-grow: 1;
+      padding: 1rem;
+    }
