@@ -1,130 +1,175 @@
-/* app.js - versión corregida
-   - Unifica añadir al carrito: usa carrito.js si está (window.agregarAlCarrito / window.productos)
-     y si no cae al fallback (localStorage 'catalog_cart').
+/* app.js
+   Unificador de "añadir al carrito" sin tocar carrito.js.
+   - Prioridad: usar carrito.js si expone window.productos + window.agregarAlCarrito.
+   - Si no, persistir en localStorage 'carrito' (forma: [{codigo,nombre,precio,descripcion,img,cantidad},...]).
+   - Mantiene compatibilidad con 'catalog_cart' como fallback secundario.
    - Sin alertas.
 */
 
 const CatalogApp = (() => {
-  const CART_KEY = 'catalog_cart';
+  const CART_KEY = 'catalog_cart'; // compatibilidad histórica
+  const CART_KEY_PRIMARY = 'carrito'; // clave preferida para que carro.html la lea
 
-  // Productos (array maestro)
+  // Productos "maestro" usados por la UI (no tocar desde aquí)
   const products = [
     { code: 'JM001', category: 'Juegos de Mesa', name: 'Catan', price: 29990, img: 'img/Sebas/JM001.jpg', stock: 20 },
     { code: 'JM002', category: 'Juegos de Mesa', name: 'Carcassonne', price: 24990, img: 'img/Sebas/JM002.jpg', stock: 15 },
     { code: 'AC001', category: 'Accesorios', name: 'Joystick Xbox Series X', price: 59990, img: 'img/Sebas/AC001.jpg', stock: 22 },
     { code: 'AC002', category: 'Accesorios', name: 'Auriculares Gamer HyperX Cloud II', price: 79990, img: 'img/Sebas/AC002.jpg', stock: 16 },
     { code: 'CO001', category: 'Consolas', name: 'PlayStation 5', price: 549990, img: 'img/Sebas/CO001.jpg', stock: 10 },
-    { code: 'CG001', category: 'Computadores Gamers', name: 'PC Gamer ASUS ROG Strix', price: 1299990, img: 'img/Sebas/CG001.jpg', stock: 5 },
-    { code: 'SG001', category: 'Sillas Gamers', name: 'Silla Gamer Secretlab Titan', price: 349990, img: 'img/Sebas/SG001.jpg', stock: 9 },
+    { code: 'CG001', category: 'Computadores Gamer', name: 'PC Gamer ASUS ROG Strix', price: 1299990, img: 'img/Sebas/CG001.jpg', stock: 5 },
+    { code: 'SG001', category: 'Sillas Gamer', name: 'Silla Gamer Secretlab Titan', price: 349990, img: 'img/Sebas/SG001.jpg', stock: 9 },
     { code: 'MS001', category: 'Mouse', name: 'Mouse Gamer Logitech G502 HERO', price: 49990, img: 'img/Sebas/MS001.jpg', stock: 13 },
     { code: 'MP001', category: 'Mousepad', name: 'Mousepad Razer Goliathus Extended Chroma', price: 29990, img: 'img/Sebas/MP001.jpg', stock: 19 },
     { code: 'PP001', category: 'Poleras Personalizadas', name: "Polera Gamer Personalizada 'Level-Up'", price: 14990, img: 'img/Sebas/PP001.jpg', stock: 50 }
   ];
 
-  // PRODUCT SPECS
-  const productSpecs = {
-    'JM001': { short: 'Catan — juego de estrategia de colocación y comercio.', details: ['Jugadores: 3–4 (ampliable 5–6 con expansión).','Tiempo de juego: 60–120 minutos.','Edad recomendada: 10+.','Componentes: tablero modular hexagonal, cartas de recursos, fichas, carreteras/poblados/ciudades, dados y cartas de desarrollo.','Mecánicas: comercio, colocación de losetas, gestión de recursos.'] },
-    'JM002': { short: 'Carcassonne — juego de losetas con colocación de meeples.', details: ['Jugadores: 2–5.','Tiempo de juego: ~30–45 minutos.','Edad recomendada: 7+.','Componentes: losetas de terreno, meeples en varios colores y marcadores de puntuación.','Mecánicas: colocación de losetas, control de áreas y puntuación por ciudades/caminos/monasterios/pastizales.'] },
-    'AC001': { short: 'Controlador inalámbrico compatible Xbox Series X/S y PC.', details: ['Conectividad: Xbox Wireless, Bluetooth y USB-C para conexión por cable.','Compatibilidad: Xbox Series X|S, Windows 10/11, Android, iOS.','Autonomía: depende de baterías AA (estimado en el sitio oficial).','Funciones: gatillos hápticos, D-pad y emparejamiento multi-dispositivo.'] },
-    'AC002': { short: 'HyperX Cloud II — headset gaming circumaural USB/analógico.', details: ['Drivers: 53 mm con imanes de neodimio.','Respuesta de frecuencia (según HyperX): 10 Hz–23 kHz.','Micrófono: condensador electret desmontable, con cancelación de ruido.','Compatibilidad: PC, PS5, PS4, Xbox Series X|S, Nintendo Switch y dispositivos móviles.','Construcción: estructura de aluminio; almohadillas de memory foam.'] },
-    'CO001': { short: 'PlayStation 5 — consola Sony de nueva generación.', details: ['CPU: AMD Zen 2 basado (8 núcleos a frecuencia variable).','GPU: RDNA 2 personalizado de AMD con trazado de rayos.','Memoria: 16 GB GDDR6.','Almacenamiento: SSD NVMe ultra-rápido; soporte de expansión NVMe.','Soporte de vídeo: hasta 4K@120Hz y salida 8K (según título y configuración).'] },
-    'CG001': { short: 'PC Gamer ASUS ROG Strix — familia ROG Strix con variantes (GPU/Núcleo variable).', details: ['Serie: ROG Strix (es una línea; las especificaciones varían por modelo).','Opciones típicas: GPUs NVIDIA RTX (3060/4070/4080...), CPUs Intel o AMD (i5/i7/i9 o Ryzen 5/7/9), memoria DDR4/DDR5 y SSD NVMe.','Recomendación: revisar la ficha del modelo exacto para RAM, GPU y almacenamiento antes de comprar.'] },
-    'SG001': { short: 'Secretlab Titan — silla gamer de gama alta (varias variantes).', details: ['Tamaños y variantes: Regular / XL / Small; materiales: NEO™ Hybrid Leatherette o tejido tejido (SoftWeave).','Ajustes: soporte lumbar integrado ajustable, inclinación, reposabrazos 4D.','Carga máxima y rango recomendado dependen de la variante (ver comparativa de Secretlab).'] },
-    'MS001': { short: 'Logitech G502 HERO — mouse gaming con sensor HERO y pesos ajustables.', details: ['Sensor: HERO (100–25.600 DPI).','Pesos tunables: sistema de 5 pesos (3.6 g cada uno) para ajustar inercia.','Botones: múltiples botones programables y software G HUB para perfiles.','Dimensiones y peso: ver ficha oficial para datos exactos.'] },
-    'MP001': { short: 'Razer Goliathus Extended Chroma — mousepad RGB extendido.', details: ['Superficie optimizada para sensores ópticos y láser.','Tamaño extendido para teclado+mause; iluminación RGB personalizable (requiere controlador compatible).','Construcción: base antideslizante de goma.'] },
-    'PP001': { short: 'Polera gamer personalizada — prenda textil con impresión personalizada.', details: ["Material: algodón / mezcla poliéster (según acabados solicitados).","Tallas disponibles: S / M / L / XL (según stock).","Personalización: método de impresión y plazos varían según pedido."] }
-  };
-
-  // UTILIDADES
-  function formatCLP(n){ try { return n.toLocaleString('es-CL'); } catch(e){ return String(n); } }
-
-  // Fallback cart (clave: catalog_cart)
-  function getCart(){ try { return JSON.parse(localStorage.getItem(CART_KEY)) || []; } catch(e){ return []; } }
-  function saveCart(cart){ localStorage.setItem(CART_KEY, JSON.stringify(cart)); updateCartCount(); }
-  function addToCartLocal(code, qty = 1){
-    const cart = getCart();
-    const found = cart.find(i => i.code === code);
-    if(found) found.qty += qty; else cart.push({ code, qty });
-    saveCart(cart);
-  }
-  function getTotalItems(){ return getCart().reduce((s, i) => s + (i.qty||0), 0); }
+  // Formato CLP
+  function formatCLP(n){ try { return Number(n).toLocaleString('es-CL'); } catch(e){ return String(n); } }
 
   // Escapes
   function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
   function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
 
-  // ------------------------
-  // UNIFICADOR DE "ADD TO CART"
-  // ------------------------
-  // Orden de preferencia:
-  // 1) usar carrito.js expuesto en window: window.productos + window.agregarAlCarrito(indice)
-  // 2) si producto no existe en window.productos => mapear desde products y push + persistir en productosAdmin
-  // 3) fallback: addToCartLocal (catalog_cart)
-  function addToCartUnified(code, qty = 1, productObjForMapping = null){
-    // 1) intentar usar carrito.js global (window.agregarAlCarrito)
+  // ---- Helpers para localStorage 'carrito' (clave primaria) ----
+  function readPrimaryCart(){
     try {
-      if (typeof window !== 'undefined' && typeof window.productos !== 'undefined' && Array.isArray(window.productos) && typeof window.agregarAlCarrito === 'function') {
-        // buscar índice por código (acepta propiedades codigo o code)
-        const idx = window.productos.findIndex(p => {
-          const c = (p.codigo || p.code || '').toString();
-          return c === String(code);
-        });
+      const raw = localStorage.getItem(CART_KEY_PRIMARY);
+      return raw ? JSON.parse(raw) : [];
+    } catch(e){ return []; }
+  }
+  function savePrimaryCart(arr){
+    try { localStorage.setItem(CART_KEY_PRIMARY, JSON.stringify(arr)); } catch(e){}
+    // mantener compatibilidad con 'catalog_cart' si quieres (no obligatorio)
+  }
+
+  // fallback compatibilidad antigua (catalog_cart)
+  function readLegacyCatalogCart(){
+    try {
+      const raw = localStorage.getItem(CART_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch(e){ return []; }
+  }
+  function saveLegacyCatalogCart(arr){
+    try { localStorage.setItem(CART_KEY, JSON.stringify(arr)); } catch(e){}
+  }
+
+  // Actualiza contador en nav (prefiere función expuesta por carrito.js si existe)
+  function updateCartCount(){
+    try {
+      if (typeof window !== 'undefined' && typeof window.actualizarContadorCarrito === 'function') {
+        window.actualizarContadorCarrito();
+        return;
+      }
+    } catch(e){}
+    // fallback: contemos en primary carrito
+    try {
+      const cart = readPrimaryCart();
+      const total = cart.reduce((s,i) => s + (i.cantidad || 0), 0);
+      const span = document.getElementById('cart-count');
+      if (span) span.textContent = total;
+    } catch(e){}
+  }
+
+  // Añadir al carrito usando carrito.js si es posible (espera indice en window.productos y función agregarAlCarrito)
+  function tryAddUsingCarritoJsByIndex(code, qty = 1){
+    try {
+      if (typeof window !== 'undefined' && typeof window.agregarAlCarrito === 'function' && Array.isArray(window.productos)) {
+        const idx = window.productos.findIndex(p => (p.codigo || p.code || '') === String(code));
         if (idx !== -1) {
-          for (let i = 0; i < qty; i++) window.agregarAlCarrito(idx);
-          // preferir la función de carrito.js para sincronizar contador si existe
-          if (typeof window.actualizarContadorCarrito === 'function') window.actualizarContadorCarrito();
-          else updateCartCount();
+          for (let i=0;i<qty;i++) window.agregarAlCarrito(idx);
+          // carrito.js se encarga de persistir y actualizar contador si tiene esa lógica
+          updateCartCount();
           return true;
         }
       }
-    } catch (err) {
-      // integración con carrito.js falló; no abortar
-      console.warn('Integración (1) con carrito.js falló:', err);
-    }
+    } catch(e){}
+    return false;
+  }
 
-    // 2) si no está en window.productos, intentar mapear desde productObjForMapping o desde products local
-    const pmap = productObjForMapping || products.find(p => p.code === code) || null;
-    if (pmap) {
-      try {
-        // garantizar array global
-        window.productos = window.productos || [];
-        // evitar duplicados
-        let foundIdx = window.productos.findIndex(pp => (pp.codigo || pp.code || '').toString() === String(code));
-        if (foundIdx === -1) {
-          // forma que espera carrito.js: { codigo, nombre, precio, descripcion, img }
-          window.productos.push({
-            codigo: pmap.codigo || pmap.code || pmap.code,
-            nombre: pmap.nombre || pmap.name || pmap.name,
-            precio: Number(pmap.precio || pmap.price || 0),
-            descripcion: pmap.descripcion || pmap.category || '',
-            img: pmap.img || ''
-          });
-          // persistir en productosAdmin para que admin lo vea después
-          try { localStorage.setItem('productosAdmin', JSON.stringify(window.productos)); } catch(e){}
-          foundIdx = window.productos.length - 1;
-        }
-        if (typeof window.agregarAlCarrito === 'function') {
-          for (let i=0;i<qty;i++) window.agregarAlCarrito(foundIdx);
-          if (typeof window.actualizarContadorCarrito === 'function') window.actualizarContadorCarrito();
-          else updateCartCount();
-          return true;
-        }
-      } catch (err) {
-        console.warn('Integración (2) con carrito.js falló:', err);
-      }
+  // Si carrito.js NO está disponible o no expone window.productos, guardar en localStorage 'carrito' (clave primaria)
+  function addToPrimaryCartFallback(mappedObj, qty = 1){
+    if (!mappedObj || !mappedObj.codigo) return false;
+    const code = String(mappedObj.codigo);
+    const cart = readPrimaryCart();
+    const existing = cart.find(i => String(i.codigo) === code);
+    if (existing) {
+      existing.cantidad = (existing.cantidad || 0) + qty;
+    } else {
+      const item = {
+        codigo: code,
+        nombre: mappedObj.nombre || mappedObj.name || code,
+        precio: Number(mappedObj.precio || mappedObj.price || 0),
+        descripcion: mappedObj.descripcion || mappedObj.category || '',
+        img: mappedObj.img || '',
+        cantidad: qty
+      };
+      cart.push(item);
     }
-
-    // 3) fallback localStorage 'catalog_cart'
+    savePrimaryCart(cart);
+    // also update legacy catalog_cart if desired (keep compatibility)
     try {
-      addToCartLocal(code, qty);
+      const legacy = readLegacyCatalogCart();
+      // keep legacy as [{code, qty}, ...]
+      const h = legacy.find(x => x.code === code);
+      if (h) h.qty = (h.qty || 0) + qty;
+      else legacy.push({ code: code, qty: qty });
+      saveLegacyCatalogCart(legacy);
+    } catch(e){}
+    updateCartCount();
+    return true;
+  }
+
+  // API pública para añadir producto (intenta carrito.js, si no guarda en localStorage)
+  function addToCartUnified(code, qty = 1, productObjForMapping = null){
+    // 1) si carrito.js expone window.productos y window.agregarAlCarrito -> usarlo
+    const usedCarritoJs = tryAddUsingCarritoJsByIndex(code, qty);
+    if (usedCarritoJs) return true;
+
+    // 2) si no, intentar mapear el producto y guardarlo en primary cart (localStorage 'carrito')
+    let mapped = productObjForMapping;
+    if (!mapped) {
+      mapped = products.find(p => p.code === code) || null;
+      if (mapped) {
+        mapped = {
+          codigo: mapped.code,
+          nombre: mapped.name,
+          precio: mapped.price,
+          descripcion: mapped.category,
+          img: mapped.img
+        };
+      }
+    } else {
+      // asegurar propiedades clave
+      mapped = {
+        codigo: mapped.codigo || mapped.code,
+        nombre: mapped.nombre || mapped.name,
+        precio: mapped.precio || mapped.price,
+        descripcion: mapped.descripcion || mapped.category || '',
+        img: mapped.img || ''
+      };
+    }
+
+    if (mapped) {
+      addToPrimaryCartFallback(mapped, qty);
       return true;
-    } catch (err) {
-      console.error('addToCartUnified: fallback failed', err);
+    }
+
+    // 3) si no se encontró mapping, guardamos en legacy catalog_cart (por lo menos)
+    try {
+      const legacy = readLegacyCatalogCart();
+      const existing = legacy.find(x => x.code === code);
+      if (existing) existing.qty = (existing.qty || 0) + qty;
+      else legacy.push({ code: code, qty: qty });
+      saveLegacyCatalogCart(legacy);
+      updateCartCount();
+      return true;
+    } catch(e){
       return false;
     }
   }
 
-  // PRODUCT LIST RENDER
+  // ---- Renderizado de tarjetas ----
   function productCardHtml(p){
     return `
       <article class="product-card" data-code="${escapeAttr(p.code)}" role="article" aria-label="${escapeAttr(p.name)}">
@@ -148,11 +193,10 @@ const CatalogApp = (() => {
     if(!container) return;
     const list = (!filterCategory || filterCategory === 'all') ? products : products.filter(p => (p.category || '').toLowerCase() === (filterCategory || '').toLowerCase());
 
-    // If filterCategory is free text and no exact category matches, try partial match
     if(filterCategory && filterCategory !== 'all'){
-      const exact = new Set(products.map(p => p.category.toLowerCase()));
+      const exact = new Set(products.map(p => (p.category || '').toLowerCase()));
       if(!exact.has(filterCategory.toLowerCase())){
-        const partial = products.filter(p => p.category.toLowerCase().includes(filterCategory.toLowerCase()));
+        const partial = products.filter(p => (p.category || '').toLowerCase().includes(filterCategory.toLowerCase()));
         if(partial.length) { container.innerHTML = partial.map(p => productCardHtml(p)).join(''); attachCardEvents(); return; }
       }
     }
@@ -161,6 +205,7 @@ const CatalogApp = (() => {
     attachCardEvents();
   }
 
+  // attach events for add buttons and navigation
   function attachCardEvents(){
     const container = document.getElementById('products-grid');
     if(!container) return;
@@ -168,10 +213,9 @@ const CatalogApp = (() => {
     // add button events
     container.querySelectorAll('[data-add]').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        e.stopPropagation(); // prevent navigating to product page
+        e.stopPropagation(); // no navegar al detalle
         const code = e.currentTarget.dataset.add;
-        // preparar objeto mapeado para poder usarlo si hace falta
-        const product = products.find(x=>x.code===code) || null;
+        const product = products.find(x => x.code === code) || null;
         const mapped = product ? {
           codigo: product.code,
           nombre: product.name,
@@ -180,14 +224,13 @@ const CatalogApp = (() => {
           img: product.img
         } : null;
 
-        // Añadir sin alert
+        // Llamada silenciosa
         addToCartUnified(code, 1, mapped);
-        // update visual counter (si carrito.js no lo hizo)
-        if (typeof window.actualizarContadorCarrito === 'function') {
-          try { window.actualizarContadorCarrito(); } catch(e){}
-        } else {
-          updateCartCount();
-        }
+        // actualizar contador visual (si carrito.js no lo hizo)
+        try {
+          if (typeof window.actualizarContadorCarrito === 'function') window.actualizarContadorCarrito();
+          else updateCartCount();
+        } catch(e){ updateCartCount(); }
       });
     });
 
@@ -199,14 +242,14 @@ const CatalogApp = (() => {
     // click on card navigates to product.html
     container.querySelectorAll('.product-card').forEach(card => {
       card.addEventListener('click', (e) => {
+        // si clic en botón agregar se paró la propagación, aquí será otro clic => navegar
         const code = card.dataset.code;
-        // if user clicked on the add button we stopped propagation; otherwise navigate
         location.href = 'product.html?code=' + encodeURIComponent(code);
       });
     });
   }
 
-  // CATEGORIES datalist population
+  // datalist categorías
   function getCategories(){
     const set = new Set(products.map(p => p.category || 'Sin categoría'));
     return Array.from(set).sort();
@@ -218,7 +261,7 @@ const CatalogApp = (() => {
     datalist.innerHTML = cats.map(c => `<option value="${escapeAttr(c)}"></option>`).join('');
   }
 
-  // PRODUCT PAGE render
+  // render página de detalle
   function renderProductPage(code){
     const root = document.getElementById('product-detail');
     if(!root) return;
@@ -232,7 +275,15 @@ const CatalogApp = (() => {
       return;
     }
 
-    const specs = productSpecs[code] || { short: '', details: [] };
+    const specs = (typeof window !== 'undefined' && window.productSpecs) ? window.productSpecs[code] : null;
+    // we have local productSpecs defined in earlier versions; if not present just show basic
+    let detailsHtml = '';
+    if (!specs && product) {
+      // we can show short placeholders or omit
+      detailsHtml = '';
+    } else if (specs && specs.details) {
+      detailsHtml = `<ul>${specs.details.map(d => `<li>${escapeHtml(d)}</li>`).join('')}</ul>`;
+    }
 
     root.innerHTML = `
       <div class="product-detail">
@@ -247,63 +298,46 @@ const CatalogApp = (() => {
             <h2>${escapeHtml(product.name)}</h2>
             <div class="product-meta">${escapeHtml(product.category)} • Código: ${escapeHtml(product.code)}</div>
             <p style="margin-top:12px;font-weight:700;font-size:1.1rem">$${formatCLP(product.price)} CLP</p>
-
-            <p style="margin-top:10px">${escapeHtml(specs.short || '')}</p>
-
+            <p style="margin-top:10px">${escapeHtml((specs && specs.short) || '')}</p>
             <section class="specs">
               <h4>Especificaciones / Detalles</h4>
-              <ul>
-                ${ (specs.details || []).map(d => `<li>${escapeHtml(d)}</li>`).join('') }
-              </ul>
+              ${detailsHtml}
             </section>
           </div>
         </div>
       </div>
     `;
 
-    // hook add button
     const addBtn = document.getElementById('btn-add-detail');
-    if(addBtn) addBtn.addEventListener('click', () => {
-      // mapear producto para la función unificada
-      const mapped = {
-        codigo: product.code,
-        nombre: product.name,
-        precio: product.price,
-        descripcion: product.category,
-        img: product.img
-      };
-      addToCartUnified(product.code, 1, mapped);
-      if (typeof window.actualizarContadorCarrito === 'function') {
-        try { window.actualizarContadorCarrito(); } catch(e){}
-      } else updateCartCount();
-      // sin alert
-    });
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        const mapped = {
+          codigo: product.code,
+          nombre: product.name,
+          precio: product.price,
+          descripcion: product.category,
+          img: product.img
+        };
+        addToCartUnified(product.code, 1, mapped);
+        try {
+          if (typeof window.actualizarContadorCarrito === 'function') window.actualizarContadorCarrito();
+          else updateCartCount();
+        } catch(e){ updateCartCount(); }
+      });
+    }
   }
 
   function getProductByCode(code){
     return products.find(p => p.code === code) || null;
   }
 
-  // Navigation cart count
-  function updateCartCount(){
-    // preferir carrito.js contador si existe
-    if (typeof window !== 'undefined' && typeof window.actualizarContadorCarrito === 'function') {
-      try { window.actualizarContadorCarrito(); return; } catch(e){ /* fallback */ }
-    }
-    const span = document.getElementById('cart-count');
-    if(!span) return;
-    span.textContent = getTotalItems();
-  }
-
-  // Expose methods and init
+  // init y exposición pública
   function init(){
     updateCartCount();
-    // ensure datalist exists if present on page
     const datalist = document.querySelector('#category-list');
-    if(datalist) populateCategoriesDatalist('#category-list');
+    if (datalist) populateCategoriesDatalist('#category-list');
   }
 
-  // Public API
   return {
     init,
     renderProducts,
@@ -314,3 +348,5 @@ const CatalogApp = (() => {
     addToCart: addToCartUnified
   };
 })();
+
+// Fin de app.js

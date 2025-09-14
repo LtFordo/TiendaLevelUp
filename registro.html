@@ -32,8 +32,18 @@
                 <div id="mensajes"></div>
 
                 <div class="margin-bottom">
-                    <label for="nombre" class="form-label text-uppercase">nombre completo</label>
-                    <input type="text" class="form-control" id="nombre" placeholder="Nombre completo" />
+                    <label for="run" class="form-label text-uppercase">RUN</label>
+                    <input type="text" class="form-control" id="run" placeholder="Ingrese RUN sin puntos ni guión" maxlength="9" />
+                </div>
+
+                <div class="margin-bottom">
+                    <label for="nombre" class="form-label text-uppercase">Nombre</label>
+                    <input type="text" class="form-control" id="nombre" placeholder="Nombre" maxlength="50" />
+                </div>
+
+                <div class="margin-bottom">
+                    <label for="apellido" class="form-label text-uppercase">Apellido</label>
+                    <input type="text" class="form-control" id="apellido" placeholder="Apellido" maxlength="100" />
                 </div>
 
                 <div class="margin-bottom">
@@ -71,6 +81,11 @@
                     <select id="comuna" class="form-select">
                         <option value="">Seleccione una comuna</option>
                     </select>
+                </div>
+
+                <div class="margin-bottom">
+                    <label for="direccion" class="form-label text-uppercase">Dirección</label>
+                    <textarea id="direccion" class="form-control" rows="3" maxlength="300" placeholder="Ingrese su dirección"></textarea>
                 </div>
 
                 <div class="center-button">

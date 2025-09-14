@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Carrito — Tienda Level Up</title>
+  <link rel="stylesheet" href="Css/styles2.css">
+</head>
+<body>
+  <!-- NAV igual que en el resto de ventanas. -->
+  <nav class="navbar">
+    <div class="nav-brand" id="brand-link">Level Up</div>
+    <div class="nav-menu">
+      <a href="index.html">Inicio</a>
+      <a href="catalogo.html">Catálogo</a>
+      <a href="blog.html">Blog</a>
+      <a href="contacto.html">Contacto</a>
+      <a href="carro.html" class="active">Carrito</a>
+      <a href="login.html">Ingresar</a>
+    </div>
+  </nav>
+
+  <main class="container" style="margin-top: 88px;">
+    <header class="page-header">
+      <h1>Tu carrito</h1>
+    </header>
+
+    <div class="cart-layout" style="display:grid;grid-template-columns: 1fr 360px; gap:18px; align-items:start;">
+      <section id="cart-items" class="cart-items" aria-live="polite">
+        <!-- items serán renderizados aquí -->
+      </section>
+
+      <aside class="cart-summary panel" style="background:var(--panel);border:1px solid rgba(255,255,255,0.04);padding:16px;border-radius:10px;">
+        <h3>Resumen</h3>
+        <div id="cart-summary-body">
+          <p id="cart-count-summary">Items: 0</p>
+          <p id="cart-total" style="font-weight:700;">Total: $0 CLP</p>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button id="checkout-btn" class="btn">Checkout</button>
+          <button id="clear-cart" class="btn small" style="background:#c0392b">Vaciar carrito</button>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="page-footer" style="margin-top:32px">
+    <div id="footer-text"></div>
+  </footer>
+
+  <!-- scripts: cargar carrito.js y app.js (mismo orden que en tus otras páginas) -->
+  <script src="carrito.js" defer></script>
+  <script src="app.js" defer></script>
+
+  <script>
+  // Render del carrito. Usa carrito.js si está (window.carrito / window.productos / funciones),
+  // si no usa localStorage 'carrito' o 'catalog_cart'. No muestra alerts.
+  (function(){
+    // helpers
+    function formatCLP(n){ try { return Number(n).toLocaleString('es-CL'); } catch(e){ return String(n); } }
+    function findProductInfoByCode(code){
+      // intenta usar CatalogApp si existe (app.js)
+      try {
+        if (typeof CatalogApp !== 'undefined' && typeof CatalogApp.getProductByCode === 'function') {
+          return CatalogApp.getProductByCode(code) || null;
+        }
+      } catch(e){}
+      // si no, intentar buscar en window.productos (carrito.js)
+      try {
+        if (Array.isArray(window.productos)) {
+          return window.productos.find(p => (p.codigo||p.code||'') === code) || null;
+        }
+      } catch(e){}
+      return null;
+    }
+
+    function readCartSource(){
+      // Prioridad: window.carrito -> localStorage 'carrito' -> localStorage 'catalog_cart'
+      try {
+        if (Array.isArray(window.carrito)) return { type:'carrito', arr: window.carrito };
+      } catch(e){}
+      try {
+        const raw = localStorage.getItem('carrito');
+        if (raw) return { type:'carrito', arr: JSON.parse(raw) };
+      } catch(e){}
+      try {
+        const raw2 = localStorage.getItem('catalog_cart');
+        if (raw2) {
+          // catalog_cart stores [{code, qty}, ...]
+          const arr = JSON.parse(raw2);
+          // map to unified shape: { codigo, nombre?, precio?, cantidad, img? }
+          const mapped = arr.map(it => {
+            const info = findProductInfoByCode(it.code) || {};
+            return {
+              codigo: it.code,
+              nombre: info.name || info.nombre || it.code,
+              precio: info.price || info.precio || 0,
+              cantidad: it.qty || it.cantidad || 0,
+              img: info.img || info.imagen || ''
+            };
+          });
+          return { type: 'catalog_cart', arr: mapped, raw: arr };
+        }
+      } catch(e){}
+      return { type:'empty', arr: [] };
+    }
+
+    function persistCartAfterChange(sourceType, arr, rawFromCatalogCart){
+      // If we manipulated window.carrito (carrito.js), prefer calling mostrarCarrito / guardar via carrito.js
+      if (sourceType === 'carrito') {
+        try {
+          // window.carrito is a reference to array that carrito.js manages; update localStorage and call mostrarCarrito if available
+          localStorage.setItem('carrito', JSON.stringify(window.carrito));
+          if (typeof window.mostrarCarrito === 'function') window.mostrarCarrito();
+          if (typeof window.actualizarContadorCarrito === 'function') window.actualizarContadorCarrito();
+          return;
+        } catch(e){}
+      }
+      // if it was catalog_cart fallback, write raw array back (rawFromCatalogCart)
+      if (sourceType === 'catalog_cart' && Array.isArray(rawFromCatalogCart)) {
+        try {
+          localStorage.setItem('catalog_cart', JSON.stringify(rawFromCatalogCart));
+        } catch(e){}
+      }
+      // otherwise save to 'carrito' localStorage
+      try { localStorage.setItem('carrito', JSON.stringify(arr)); } catch(e){}
+      // update visual counter if possible
+      if (typeof window.actualizarContadorCarrito === 'function') {
+        try { window.actualizarContadorCarrito(); } catch(e){}
+      } else if (typeof CatalogApp !== 'undefined' && typeof CatalogApp.updateCartCount === 'function') {
+        try { CatalogApp.updateCartCount(); } catch(e){}
+      } else {
+        // update #cart-count if present
+        const span = document.getElementById('cart-count');
+        if (span) span.textContent = arr.reduce((s,i)=>s+(i.cantidad||i.qty||i.qty||0),0);
+      }
+    }
+
+    function render(){
+      const root = document.getElementById('cart-items');
+      root.innerHTML = '';
+      const result = readCartSource();
+      const arr = result.arr || [];
+      if (!arr.length) {
+        root.innerHTML = '<p>Tu carrito está vacío.</p>';
+        document.getElementById('cart-count-summary').textContent = 'Items: 0';
+        document.getElementById('cart-total').textContent = 'Total: $0 CLP';
+        // also update nav count
+        if (typeof window.actualizarContadorCarrito === 'function') try{ window.actualizarContadorCarrito(); }catch(e){}
+        return;
+      }
+
+      let total = 0;
+      let totalItems = 0;
+
+      arr.forEach((item, index) => {
+        const codigo = item.codigo || item.code || '';
+        const nombre = item.nombre || item.name || codigo;
+        const precio = Number(item.precio || item.price || 0);
+        const cantidad = Number(item.cantidad || item.qty || item.cantidad || 0);
+        const img = item.img || 'img/placeholder.png';
+
+        total += precio * cantidad;
+        totalItems += cantidad;
+
+        const card = document.createElement('article');
+        card.className = 'cart-row';
+        card.style.display = 'flex';
+        card.style.gap = '12px';
+        card.style.padding = '12px';
+        card.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+        card.innerHTML = `
+          <img src="${img}" onerror="this.onerror=null;this.src='img/placeholder.png'" alt="${nombre}" style="width:110px;height:80px;object-fit:cover;border-radius:8px;" />
+          <div style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+              <div>
+                <div style="font-weight:700">${nombre}</div>
+                <div style="color:var(--muted);font-size:0.95rem">Código: ${codigo}</div>
+                <div style="margin-top:6px">Precio unitario: $${formatCLP(precio)} CLP</div>
+              </div>
+              <div style="text-align:right">
+                <button class="remove-item" data-idx="${index}" style="background:transparent;border:none;cursor:pointer;font-size:16px">❌</button>
+              </div>
+            </div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+              <label style="font-size:0.95rem">Cantidad</label>
+              <input type="number" min="1" class="item-qty" data-idx="${index}" value="${cantidad}" style="width:70px;padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);background:var(--input);color:var(--text)"/>
+            </div>
+          </div>
+        `;
+        root.appendChild(card);
+      });
+
+      document.getElementById('cart-count-summary').textContent = 'Items: ' + totalItems;
+      document.getElementById('cart-total').textContent = 'Total: $' + formatCLP(total) + ' CLP';
+
+      // attach handlers (remove / qty change)
+      root.querySelectorAll('.remove-item').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const idx = Number(e.currentTarget.dataset.idx);
+          // Try carrito.js eliminarDelCarrito
+          try {
+            if (typeof window.eliminarDelCarrito === 'function' && Array.isArray(window.carrito)) {
+              // eliminarDelCarrito espera índice sobre window.carrito
+              window.eliminarDelCarrito(idx);
+              render();
+              return;
+            }
+          } catch(e){}
+
+          // fallback: modify local representation and persist
+          if (result.type === 'catalog_cart' && Array.isArray(result.raw)) {
+            result.raw.splice(idx, 1);
+            persistCartAfterChange('catalog_cart', arr, result.raw);
+            render();
+            return;
+          } else {
+            // fallback to cart array
+            arr.splice(idx,1);
+            persistCartAfterChange(result.type, arr, result.raw);
+            render();
+          }
+        });
+      });
+
+      root.querySelectorAll('.item-qty').forEach(inp => {
+        inp.addEventListener('change', (e) => {
+          const idx = Number(e.currentTarget.dataset.idx);
+          let newQty = Number(e.currentTarget.value) || 1;
+          if (newQty < 1) newQty = 1;
+          // Try carrito.js (window.carrito)
+          try {
+            if (Array.isArray(window.carrito)) {
+              // update window.carrito and persist
+              window.carrito[idx].cantidad = newQty;
+              persistCartAfterChange('carrito', window.carrito);
+              render();
+              return;
+            }
+          } catch(e){}
+
+          // catalog_cart raw update
+          if (result.type === 'catalog_cart' && Array.isArray(result.raw)) {
+            result.raw[idx].qty = newQty;
+            persistCartAfterChange('catalog_cart', arr, result.raw);
+            render();
+            return;
+          }
+
+          // fallback: update arr and persist to 'carrito'
+          arr[idx].cantidad = newQty;
+          persistCartAfterChange(result.type, arr, result.raw);
+          render();
+        });
+      });
+
+    } // end render
+
+    // clear cart handler
+    document.getElementById('clear-cart').addEventListener('click', () => {
+      try {
+        if (typeof window.vaciarCarrito === 'function') {
+          window.vaciarCarrito(); // carrito.js handler
+          render();
+          return;
+        }
+      } catch(e){}
+      // fallback clear localStorage keys
+      localStorage.removeItem('carrito');
+      localStorage.removeItem('catalog_cart');
+      if (Array.isArray(window.carrito)) window.carrito = [];
+      render();
+    });
+
+    // checkout placeholder: you can wire to a real flow later
+    document.getElementById('checkout-btn').addEventListener('click', () => {
+      // no dialogs requested — we'll simply redirect to checkout placeholder page (if exists)
+      if (location.pathname.endsWith('carro.html')) {
+        // if there is a checkout.html replace below; otherwise do nothing
+        if (document.querySelector('.cart-items') && document.querySelector('.cart-items').children.length) {
+          // go to a (not implemented) checkout placeholder - modify as needed
+          // location.href = 'checkout.html';
+        }
+      }
+    });
+
+    // footer year + small link (automático)
+    document.getElementById('footer-text').innerHTML = `© ${new Date().getFullYear()} Tienda Level Up`;
+
+    // initial render
+    document.addEventListener('DOMContentLoaded', render);
+    // also render after app.js init (in case app.js modifies product lists)
+    window.addEventListener('load', render);
+  })();
+  </script>
+</body>
+</html>

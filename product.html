@@ -42,7 +42,8 @@
         CatalogApp.renderProductPage(code || null);
 
         // footer year
-        document.getElementById('footer-text').textContent = `© ${new Date().getFullYear()} Tienda Level Up`;
+        document.getElementById('footer-text').innerHTML = `© ${new Date().getFullYear()} Tienda Level Up — <a href="carro.html">Ver carrito</a>`;
+      //  document.getElementById('footer-text').textContent = `© ${new Date().getFullYear()} Tienda Level Up`;
       });
     </script>
   </body>
