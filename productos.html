@@ -1,0 +1,364 @@
+<!-- Administrador/productos.html -->
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Administrador - Productos</title>
+  <!-- Mantengo la referencia al CSS como estaba (no modificaré estilos) -->
+  <link rel="stylesheet" href="../css/styles.css">
+  <style>
+    /* Estilos mínimos del modal para asegurar visibilidad sin tocar CSS global */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1200;
+    }
+    .modal-card {
+      background: var(--card-bg, #111);
+      color: var(--text-color, #fff);
+      padding: 18px;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 760px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+    .modal-card h2 { margin-top:0; margin-bottom:8px; }
+    .form-row { display:flex; gap:12px; margin-bottom:8px; align-items:center; }
+    .form-row label { width:120px; font-weight:600; }
+    .form-row input[type="text"], .form-row input[type="number"], .form-row textarea { flex:1; padding:8px; border-radius:4px; border:1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.03); color: inherit; }
+    .form-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
+    .btn { padding:8px 12px; border-radius:6px; cursor:pointer; border:none; background: #2b2b2b; color: #fff; }
+    .btn.prim { background: #0ea5c9; color: #042; }
+    .btn.warn { background:#ffb86b; color:#222; }
+    .btn.ghost { background:transparent; border:1px solid rgba(255,255,255,0.06); }
+    table.admin-table { width:100%; border-collapse:collapse; margin-top:12px; }
+    table.admin-table th, table.admin-table td { padding:8px 10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.04); }
+    .actions-bar { display:flex; gap:12px; margin-bottom:12px; align-items:center; }
+    .link-like { color:inherit; text-decoration:underline; cursor:pointer; }
+    .small-muted { font-size:0.9rem; color:rgba(255,255,255,0.6); }
+  </style>
+</head>
+<body class="admin-theme">
+  <header id="main-header"></header>
+
+  <main class="container">
+    <section class="card">
+      <h1>Administrar Productos</h1>
+      
+      <div class="actions-bar">
+        <button id="btn-add" class="btn prim">Agregar Producto</button>
+        <button id="btn-toggle-edit" class="btn ghost">Editar Producto</button>
+        <a href="Admin.html" id="btn-back" class="btn">Volver</a>
+        <div style="margin-left:auto;" class="small-muted">Productos en almacenamiento: <span id="count-products">0</span></div>
+      </div>
+
+      <div id="table-wrapper">
+        <table id="products-table" class="admin-table" aria-live="polite">
+          <thead>
+            <tr><th>Nombre</th><th>Categoría</th><th>Precio</th><th>Stock</th></tr>
+          </thead>
+          <tbody id="products-tbody">
+            <!-- filas generadas por JS -->
+          </tbody>
+        </table>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- MODAL: formulario para agregar / editar -->
+  <div id="product-modal" class="modal-backdrop" role="dialog" aria-hidden="true" style="display:none;">
+    <div class="modal-card" role="document" aria-modal="true">
+      <h2 id="modal-title">Producto</h2>
+      <form id="product-form">
+        <div class="form-row">
+          <label for="p-code">Código</label>
+          <input id="p-code" name="code" type="text" maxlength="20" required />
+        </div>
+        <div class="form-row">
+          <label for="p-name">Nombre</label>
+          <input id="p-name" name="name" type="text" maxlength="200" required />
+        </div>
+        <div class="form-row">
+          <label for="p-category">Categoría</label>
+          <input id="p-category" name="category" type="text" maxlength="100" />
+        </div>
+        <div class="form-row">
+          <label for="p-price">Precio</label>
+          <input id="p-price" name="price" type="number" min="0" step="1" required />
+        </div>
+        <div class="form-row">
+          <label for="p-stock">Stock</label>
+          <input id="p-stock" name="stock" type="number" min="0" step="1" required />
+        </div>
+        <div class="form-row">
+          <label for="p-img">Imagen (URL)</label>
+          <input id="p-img" name="img" type="text" maxlength="400" placeholder="img/... o https://..." />
+        </div>
+        <div class="form-row">
+          <label for="p-short">Short</label>
+          <input id="p-short" name="short" type="text" maxlength="300" />
+        </div>
+        <div class="form-row" style="align-items:flex-start;">
+          <label for="p-details">Detalles</label>
+          <textarea id="p-details" name="details" rows="5" placeholder="Cada línea es un detalle"></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" id="modal-cancel" class="btn">Salir</button>
+          <button type="submit" id="modal-save" class="btn prim">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modals-root"></div>
+
+  <!-- app.js en la raíz -->
+  <script src="../app.js" defer></script>
+
+  <script>
+    // Solo JS de la página admin: utiliza la API pública window.CatalogApp.admin
+    (function () {
+      'use strict';
+
+      // helpers
+      function q(id){ return document.getElementById(id); }
+      function formatCLP(n){ try { return Number(n).toLocaleString('es-CL'); } catch(e) { return String(n); } }
+
+      var editMode = false; // cuando true, nombres se vuelven clicables para editar
+      var currentEditingCode = null;
+      var productsCache = []; // cache local
+
+      function ensureCatalogAppAvailable() {
+        if (typeof window.CatalogApp === 'undefined' || !window.CatalogApp.admin) {
+          console.error('CatalogApp.admin no disponible. Asegúrate que ../app.js se cargó correctamente.');
+          return false;
+        }
+        return true;
+      }
+
+      function loadProductsToCache() {
+        if (!ensureCatalogAppAvailable()) return;
+        try {
+          productsCache = window.CatalogApp.admin.list() || [];
+        } catch (e) {
+          console.error('Error leyendo products desde admin.list()', e);
+          productsCache = [];
+        }
+        q('count-products').textContent = String(productsCache.length);
+      }
+
+      function renderTable() {
+        loadProductsToCache();
+        var tbody = q('products-tbody');
+        tbody.innerHTML = '';
+        if (!productsCache || !productsCache.length) {
+          tbody.innerHTML = '<tr><td colspan="4" class="small-muted">No hay productos en el almacenamiento.</td></tr>';
+          return;
+        }
+        var frag = document.createDocumentFragment();
+        productsCache.forEach(function(p){
+          var tr = document.createElement('tr');
+          // Nombre (normal o link según editMode)
+          var tdName = document.createElement('td');
+          if (editMode) {
+            var a = document.createElement('a');
+            a.textContent = p.name || p.code;
+            a.className = 'link-like';
+            a.href = '#';
+            a.dataset.code = p.code;
+            a.addEventListener('click', function(evt){
+              evt.preventDefault();
+              openModalForEdit(this.dataset.code);
+            });
+            tdName.appendChild(a);
+          } else {
+            tdName.textContent = p.name || p.code;
+          }
+
+          var tdCat = document.createElement('td'); tdCat.textContent = p.category || '';
+          var tdPrice = document.createElement('td'); tdPrice.textContent = '$' + formatCLP(p.price) + ' CLP';
+          var tdStock = document.createElement('td'); tdStock.textContent = (typeof p.stock !== 'undefined' ? String(p.stock) : 'N/D');
+
+          tr.appendChild(tdName);
+          tr.appendChild(tdCat);
+          tr.appendChild(tdPrice);
+          tr.appendChild(tdStock);
+          frag.appendChild(tr);
+        });
+        tbody.appendChild(frag);
+      }
+
+      // Modal control
+      function openModalForEdit(code) {
+        if (!ensureCatalogAppAvailable()) return;
+        var prod = window.CatalogApp.admin.get(code);
+        if (!prod) {
+          alert('Producto no encontrado: ' + code);
+          return;
+        }
+        currentEditingCode = code;
+        q('modal-title').textContent = 'Editar producto — ' + code;
+        // fill form
+        q('p-code').value = prod.code || '';
+        q('p-code').disabled = true; // no permitir cambiar código al editar
+        q('p-name').value = prod.name || '';
+        q('p-category').value = prod.category || '';
+        q('p-price').value = prod.price || 0;
+        q('p-stock').value = (typeof prod.stock !== 'undefined' ? prod.stock : 0);
+        q('p-img').value = prod.img || '';
+        // load specs
+        var specs = {};
+        try { specs = window.CatalogApp.admin.readSpecs() || {}; } catch(e) { specs = {}; }
+        var sp = specs[code] || { short:'', details:[] };
+        q('p-short').value = sp.short || '';
+        q('p-details').value = (sp.details && sp.details.length) ? sp.details.join('\\n') : '';
+        showModal(true);
+      }
+
+      function openModalForAdd() {
+        currentEditingCode = null;
+        q('modal-title').textContent = 'Agregar producto';
+        q('p-code').value = '';
+        q('p-code').disabled = false;
+        q('p-name').value = '';
+        q('p-category').value = '';
+        q('p-price').value = 0;
+        q('p-stock').value = 0;
+        q('p-img').value = '';
+        q('p-short').value = '';
+        q('p-details').value = '';
+        showModal(true);
+      }
+
+      function showModal(show) {
+        var modal = q('product-modal');
+        if (show) {
+          modal.style.display = 'flex';
+          modal.setAttribute('aria-hidden','false');
+          // focus first field
+          setTimeout(function(){ q('p-code').focus(); }, 50);
+        } else {
+          modal.style.display = 'none';
+          modal.setAttribute('aria-hidden','true');
+        }
+      }
+
+      // Form submit: add or update
+      function onFormSubmit(evt) {
+        evt.preventDefault();
+        if (!ensureCatalogAppAvailable()) return;
+        var code = q('p-code').value.trim();
+        if (!code) { alert('Código requerido'); return; }
+        var name = q('p-name').value.trim();
+        var category = q('p-category').value.trim();
+        var price = Number(q('p-price').value || 0);
+        var stock = Number(q('p-stock').value || 0);
+        var img = q('p-img').value.trim();
+        var short = q('p-short').value.trim();
+        var detailsRaw = q('p-details').value || '';
+        var detailsArr = detailsRaw.split('\\n').map(function(s){ return s.trim(); }).filter(function(s){ return s.length > 0; });
+
+        var isEdit = !!currentEditingCode;
+        var actionText = isEdit ? 'guardar los cambios en' : 'crear';
+        if (!confirm('¿Confirmas que deseas ' + actionText + ' el producto "' + code + '"?')) return;
+
+        try {
+          if (isEdit) {
+            var up = { name: name, category: category, price: price, stock: stock, img: img, short: short, details: detailsArr };
+            var res = window.CatalogApp.admin.update(code, up);
+            if (res && res.ok) {
+              // also ensure specs saved (admin.update handles specs already in our API, but to be safe:)
+              var specs = window.CatalogApp.admin.readSpecs() || {};
+              specs[code] = { short: short, details: detailsArr };
+              window.CatalogApp.admin.saveSpecs(specs);
+              showModal(false);
+              renderTable();
+              alert('Producto actualizado correctamente.');
+            } else {
+              alert('Error al actualizar: ' + (res && res.msg ? res.msg : 'desconocido'));
+            }
+          } else {
+            // Check existence
+            var exists = window.CatalogApp.admin.get(code);
+            if (exists) { alert('Ya existe un producto con ese código. Usa editar si quieres modificarlo.'); return; }
+            var obj = { code: code, name: name, category: category, price: price, stock: stock, img: img, short: short, details: detailsArr };
+            var r = window.CatalogApp.admin.add(obj);
+            if (r && r.ok) {
+              // admin.add already saves specs; ensure table update
+              showModal(false);
+              renderTable();
+              alert('Producto agregado correctamente.');
+            } else {
+              alert('Error al crear: ' + (r && r.msg ? r.msg : 'desconocido'));
+            }
+          }
+        } catch (e) {
+          console.error('Guardar producto', e);
+          alert('Ocurrió un error al guardar. Mira consola.');
+        }
+      }
+
+      // Cancel modal
+      function onModalCancel() {
+        if (!confirm('Salir sin guardar los cambios?')) return;
+        showModal(false);
+      }
+
+      // Toggle edit mode
+      function toggleEditMode() {
+        editMode = !editMode;
+        q('btn-toggle-edit').textContent = editMode ? 'Salir edición' : 'Editar Producto';
+        renderTable();
+      }
+
+      // Init listeners
+      function attachHandlers() {
+        q('btn-add').addEventListener('click', function(){ openModalForAdd(); });
+        q('btn-toggle-edit').addEventListener('click', toggleEditMode);
+        q('modal-cancel').addEventListener('click', onModalCancel);
+        q('product-form').addEventListener('submit', onFormSubmit);
+        // Back link: user asked to go to Admin.html — keep as <a> but add safety
+        var back = q('btn-back');
+        if (back) back.addEventListener('click', function(e){ /* default anchor handles navigation */ });
+      }
+
+      // On DOM ready
+      document.addEventListener('DOMContentLoaded', function(){
+        // Ensure CatalogApp loaded
+        if (!ensureCatalogAppAvailable()) {
+          // wait a bit in case app.js is still loading (defered). Try again.
+          setTimeout(function(){
+            if (!ensureCatalogAppAvailable()) {
+              alert('CatalogApp no disponible. Revisa la carga de ../app.js');
+              return;
+            }
+            initPage();
+          }, 200);
+          return;
+        }
+        initPage();
+      });
+
+      function initPage() {
+        attachHandlers();
+        renderTable();
+      }
+
+      // Export some for debugging in console
+      window.AdminProductsPage = {
+        renderTable: renderTable,
+        openAddModal: openModalForAdd,
+        openEditModal: openModalForEdit
+      };
+
+    }());
+  </script>
+</body>
+</html>
